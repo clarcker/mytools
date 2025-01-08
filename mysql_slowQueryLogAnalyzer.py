@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-解析慢日志生成报告，包含json，markdown，Excel3种格式
+解析慢日志生成报告，包含json，markdown，Excel 3种格式
 """
 
 import re
@@ -159,21 +159,43 @@ class SlowQueryLogAnalyzer:
         print("正在解析日志文件...")
         self.parse_log_file(log_file)
 
+        workbook = xlsxwriter.Workbook(f"{output_prefix}_report.xlsx")
+        worksheet = workbook.add_worksheet()
+        # 写入表头
+        headers = ['表', '次数', '平均时间', '最大时间', '处理方式', 'db', 'sql']
+        for col_num, header in enumerate(headers):
+            worksheet.write(0, col_num, header)
+
+
         # 生成详细报告
         print("正在生成详细报告...")
         sort_data = []
         markdown = """| 表                                                        | 次数 | 平均时间 | 最大时间 | 处理方式                      |db|sql|
 |----------------------------------------------------------|----|------|------|---------------------------|-----|-------|\n"""
+
+        row_num = 0
         for k, v in self.tables.items():
             for k1, v1 in v.items():
                 if k1 != "db":
+                    row_num += 1
                     tmp1 = "-------"
                     if "SQL_NO_CACHE" in k1:
                         tmp1 = "数据库备份导致的"
+
+                    tmp_data = [k, v1["query_count"], v1["avg_time"],v1["max_time"],tmp1, v["db"], k1]
+                    for col_num, value in enumerate(tmp_data):
+                        if type(value) == list:
+                            worksheet.write(row_num, col_num, ' '.join(value))
+                        else:
+                            worksheet.write(row_num, col_num, value)
                     tmp_data = "|{0}|{1}|{2:.2f}|{3:.2f}|{6}|{5}|{4}|\n".format(k, v1["query_count"], v1["avg_time"],
                                                                                 v1["max_time"], k1[:200],
                                                                                 str(v["db"])[:50], tmp1)
                     sort_data.append([v1["query_count"], k, tmp_data])
+
+
+        workbook.close()
+        print(f"Excel报告已生成: {output_prefix}_report.xlsx")
 
         sorted_data = sorted(sort_data, key=lambda x: (x[0], x[1]), reverse=True)
         for data in sorted_data:
@@ -183,38 +205,10 @@ class SlowQueryLogAnalyzer:
             f.write(markdown)
 
 
-        for k, v in self.tables.items():
-            for k1, v1 in v.items():
-                if k1 != "db":
-                    tmp1 = "-------"
-                    if "SQL_NO_CACHE" in k1:
-                        tmp1 = "数据库备份导致的"
-                    tmp_data = [k, v1["query_count"], v1["avg_time"], v1["max_time"], tmp1, str(v["db"]), k1[:200]]
-                    sort_data.append([v1["query_count"], k, tmp_data])
-
-        sorted_data = sorted(sort_data, key=lambda x: (x[0], x[1]), reverse=True)
-
-        workbook = xlsxwriter.Workbook(f"{output_prefix}_report.xlsx")
-        worksheet = workbook.add_worksheet()
-
-        # 写入表头
-        headers = ['表', '次数', '平均时间', '最大时间', '处理方式', 'db', 'sql']
-        for col_num, header in enumerate(headers):
-            worksheet.write(0, col_num, header)
-
-        # 写入数据
-        for row_num, data in enumerate(sorted_data, start=1):
-            for col_num, value in enumerate(data[2]):
-                worksheet.write(row_num, col_num, value)
-
-        workbook.close()
-        print(f"Excel报告已生成: {output_prefix}_report.xlsx")
-
         report_file = f"{output_prefix}_report_table.json"
         with open(report_file, 'w', encoding='utf-8') as f:
             self.tables["tables"] = list(self.tables.keys())
             json.dump(self.tables, f, indent=2, ensure_ascii=False)
-
 
 def main():
     parser = argparse.ArgumentParser(description='MySQL慢查询日志分析工具')
